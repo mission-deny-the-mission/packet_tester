@@ -31,3 +31,11 @@ overrides:
       - python3-requests
       - iputils-ping
       - iputils-tracepath
+  archlinux:
+    depends:
+      - python
+      - python-flask
+      - python-flask-socketio
+      - python-eventlet
+      - python-requests
+      - iputils
