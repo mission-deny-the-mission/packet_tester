@@ -11,8 +11,14 @@ sha256sums=('SKIP')
 
 package() {
   cd "$srcdir"
-  install -d "$pkgdir/opt/packet-tester"
-  cp -r app.py database.py templates static "$pkgdir/opt/packet-tester/"
+  install -d "$pkgdir/opt/packet-tester/static/js"
+  install -d "$pkgdir/opt/packet-tester/static/css"
+  install -d "$pkgdir/opt/packet-tester/templates"
+  
+  install -m644 app.py database.py "$pkgdir/opt/packet-tester/"
+  install -m644 templates/index.html "$pkgdir/opt/packet-tester/templates/"
+  install -m644 static/js/monitor.js "$pkgdir/opt/packet-tester/static/js/"
+  install -m644 static/css/tailwind.min.css "$pkgdir/opt/packet-tester/static/css/"
   
   install -Dm644 packaging/packet-tester.service "$pkgdir/usr/lib/systemd/system/packet-tester.service"
 }
