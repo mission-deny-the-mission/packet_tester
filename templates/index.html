@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Diagnostic Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; }
+        .card { background-color: #1e293b; border-radius: 0.75rem; padding: 1.5rem; }
+        #traceroute-log { font-family: 'Courier New', Courier, monospace; }
+    </style>
+</head>
+<body class="p-6">
+    <div class="max-w-6xl mx-auto">
+        <header class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl font-bold text-blue-400">Network Monitor</h1>
+            <div class="flex gap-2">
+                <input type="text" id="target" placeholder="8.8.8.8" class="bg-slate-800 border border-slate-700 rounded px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <button id="start-btn" class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded font-semibold transition">Start Test</button>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="card flex flex-col items-center justify-center">
+                <span class="text-slate-400 text-sm mb-1 uppercase tracking-wider">Latency</span>
+                <div class="text-4xl font-bold"><span id="curr-latency">--</span> <span class="text-lg text-slate-500">ms</span></div>
+            </div>
+            <div class="card flex flex-col items-center justify-center border-l-4 border-red-500">
+                <span class="text-slate-400 text-sm mb-1 uppercase tracking-wider">Packet Loss</span>
+                <div class="text-4xl font-bold"><span id="curr-loss">0</span> <span class="text-lg text-slate-500">%</span></div>
+            </div>
+            <div class="card flex flex-col items-center justify-center">
+                <span class="text-slate-400 text-sm mb-1 uppercase tracking-wider">Packets</span>
+                <div class="text-2xl font-semibold"><span id="pkts-sent">0</span> / <span id="pkts-recv">0</span></div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div class="card">
+                <h2 class="text-xl font-semibold mb-4 text-blue-300">Latency Trend (Real-time)</h2>
+                <div class="h-64">
+                    <canvas id="latencyChart"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <h2 class="text-xl font-semibold mb-4 text-green-300">Traceroute</h2>
+                <div id="traceroute-log" class="bg-slate-900 rounded p-4 h-64 overflow-y-auto text-sm text-green-400">
+                    Waiting for data...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
