@@ -2,3 +2,5 @@ __pycache__/
 *.log
 venv/
 .ruff_cache/
+.coverage
+network_data.db
