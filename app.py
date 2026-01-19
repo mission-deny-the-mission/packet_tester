@@ -91,7 +91,11 @@ app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
 # Initialize database
-database.init_db()
+try:
+    database.init_db()
+except Exception as e:
+    print(f"CRITICAL ERROR: Failed to initialize database: {e}")
+    # Continue anyway, but expect failures
 
 # Shared state to manage active processes
 active_tasks = {}
@@ -106,16 +110,21 @@ def parse_ping(line):
 
 
 def run_ping(target, sid):
-    print(f"Starting ping for {target} (sid: {sid})")
-    target_id = database.get_or_create_target(target)
+    try:
+        print(f"Starting ping for {target} (sid: {sid})")
+        target_id = database.get_or_create_target(target)
 
-    process = subprocess.Popen(
-        ["ping", "-i", "1", target],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-    )
+        process = subprocess.Popen(
+            ["/usr/bin/ping", "-i", "1", target],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+    except Exception as e:
+        print(f"ERROR: Failed to start ping for {target}: {e}")
+        socketio.emit("error", {"message": f"Failed to start ping: {e}"}, to=sid)
+        return
 
     if sid not in active_tasks:
         print(f"SID {sid} not in active_tasks, aborting ping")
@@ -174,7 +183,7 @@ def run_ping(target, sid):
                     "total_received": total_received,
                     "raw": line.strip(),
                 },
-                room=sid,
+                to=sid,
             )
         elif (
             "Request timeout" in line
@@ -201,7 +210,7 @@ def run_ping(target, sid):
                     "total_received": total_received,
                     "raw": "Request timeout",
                 },
-                room=sid,
+                to=sid,
             )
 
     process.wait()
@@ -209,26 +218,30 @@ def run_ping(target, sid):
 
 
 def run_hop_analysis(target, sid):
-    print(f"Starting hop analysis for {target}")
-    target_id = database.get_or_create_target(target)
+    try:
+        print(f"Starting hop analysis for {target}")
+        target_id = database.get_or_create_target(target)
 
-    # We'll use a loop to ping each hop found by tracepath
-    # First, get the hops
-    hops = []
-    process = subprocess.Popen(
-        ["tracepath", "-n", "-m", "15", target],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-    )
+        # We'll use a loop to ping each hop found by tracepath
+        # First, get the hops
+        hops = []
+        process = subprocess.Popen(
+            ["/usr/bin/tracepath", "-n", "-m", "15", target],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+    except Exception as e:
+        print(f"ERROR: Failed to start hop analysis for {target}: {e}")
+        return
 
     for line in iter(process.stdout.readline, ""):
         if sid not in active_tasks or target not in active_tasks[sid]:
             process.terminate()
             break
 
-        match = re.search(r"\s+(\d+):\s+([\d\.]+)", line)
+        match = re.search(r"^\s*(\d+):\s+([a-fA-F\d\.:]+)", line)
         if match:
             hop_num = match.group(1)
             hop_ip = match.group(2)
@@ -246,7 +259,7 @@ def run_hop_analysis(target, sid):
                         "loss": 0,
                         "avg_latency": 0,
                     },
-                    room=sid,
+                    to=sid,
                 )
 
     # Now continuously monitor identified hops for loss
@@ -293,7 +306,7 @@ def run_hop_analysis(target, sid):
                     "loss": round(loss, 2),
                     "avg_latency": round(avg_lat, 2),
                 },
-                room=sid,
+                to=sid,
             )
 
         eventlet.sleep(2)  # Interval between hop scans
@@ -391,4 +404,4 @@ def stop_target_tasks(sid, target):
 
 
 if __name__ == "__main__":
-    socketio.run(app, debug=True, host="0.0.0.0", port=5000)
+    socketio.run(app, debug=False, host="0.0.0.0", port=5000)

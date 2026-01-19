@@ -2,71 +2,89 @@ import sqlite3
 import os
 from datetime import datetime
 
-DB_PATH = "network_data.db"
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "network_data.db")
 
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=20)
+        conn.row_factory = sqlite3.Row
+        # Enable WAL mode for better concurrency
+        conn.execute("PRAGMA journal_mode=WAL")
+        return conn
+    except Exception as e:
+        print(f"DATABASE ERROR: Failed to connect to {DB_PATH}: {e}")
+        raise
 
 
 def init_db():
-    conn = get_db()
-    cursor = conn.cursor()
+    print(f"Initializing database at {DB_PATH}")
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
 
-    # Targets table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS targets (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            address TEXT UNIQUE NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            is_active INTEGER DEFAULT 1
-        )
-    """)
+        # Targets table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS targets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                address TEXT UNIQUE NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_active INTEGER DEFAULT 1
+            )
+        """)
 
-    # Pings table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS pings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            target_id INTEGER NOT NULL,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            latency REAL,
-            loss REAL NOT NULL,
-            FOREIGN KEY (target_id) REFERENCES targets (id) ON DELETE CASCADE
-        )
-    """)
+        # Pings table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS pings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                target_id INTEGER NOT NULL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                latency REAL,
+                loss REAL NOT NULL,
+                FOREIGN KEY (target_id) REFERENCES targets (id) ON DELETE CASCADE
+            )
+        """)
 
-    # Hops table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS hops (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            target_id INTEGER NOT NULL,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            hop_num INTEGER NOT NULL,
-            ip TEXT NOT NULL,
-            latency REAL,
-            loss REAL,
-            FOREIGN KEY (target_id) REFERENCES targets (id) ON DELETE CASCADE
-        )
-    """)
+        # Hops table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS hops (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                target_id INTEGER NOT NULL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                hop_num INTEGER NOT NULL,
+                ip TEXT NOT NULL,
+                latency REAL,
+                loss REAL,
+                FOREIGN KEY (target_id) REFERENCES targets (id) ON DELETE CASCADE
+            )
+        """)
 
-    conn.commit()
-    conn.close()
+        conn.commit()
+        conn.close()
+        print("Database initialized successfully")
+    except Exception as e:
+        print(f"DATABASE ERROR: Failed to initialize database: {e}")
+        raise
 
 
 def get_or_create_target(address):
-    conn = get_db()
-    cursor = conn.cursor()
     try:
+        conn = get_db()
+        cursor = conn.cursor()
         cursor.execute("INSERT OR IGNORE INTO targets (address) VALUES (?)", (address,))
         cursor.execute("UPDATE targets SET is_active = 1 WHERE address = ?", (address,))
         cursor.execute("SELECT id FROM targets WHERE address = ?", (address,))
-        target_id = cursor.fetchone()[0]
+        row = cursor.fetchone()
+        if not row:
+            # Should not happen with INSERT OR IGNORE and proper address
+            raise Exception(f"Failed to find or create target: {address}")
+        target_id = row[0]
         conn.commit()
-        return target_id
-    finally:
         conn.close()
+        return target_id
+    except Exception as e:
+        print(f"DATABASE ERROR in get_or_create_target for {address}: {e}")
+        raise
 
 
 def save_ping(target_id, latency, loss):
