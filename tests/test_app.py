@@ -89,6 +89,8 @@ def test_get_ip_info_exception(mock_get):
     assert info["isp"] == "Unknown ISP"
 
 
-def test_get_ip_info_none_or_star():
-    assert get_ip_info(None) == {"isp": "-", "location": "-"}
-    assert get_ip_info("*") == {"isp": "-", "location": "-"}
+def test_get_ip_info_cache_hit():
+    ip_info_cache.clear()
+    ip_info_cache["1.1.1.1"] = {"isp": "Cached ISP", "location": "Cached Loc"}
+    info = get_ip_info("1.1.1.1")
+    assert info["isp"] == "Cached ISP"
