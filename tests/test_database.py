@@ -101,3 +101,16 @@ def test_clear_target_history(test_db):
     cursor.execute("SELECT count(*) FROM hops WHERE target_id = ?", (target_id,))
     assert cursor.fetchone()[0] == 0
     conn.close()
+
+
+def test_get_raw_data(test_db):
+    address = "8.8.8.8"
+    target_id = database.get_or_create_target(address)
+    database.save_ping(target_id, 14.5, 0.0)
+    database.save_ping(target_id, 15.2, 5.0)
+
+    raw_data = database.get_raw_data(address)
+    assert len(raw_data) == 2
+    assert raw_data[0]["latency"] == 14.5
+    assert raw_data[1]["latency"] == 15.2
+    assert "timestamp" in raw_data[0]

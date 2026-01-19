@@ -188,3 +188,55 @@ def test_run_ping_init_target_dict(mocker):
     run_ping(target, sid)
     assert target in active_tasks[sid]
     assert "ping" in active_tasks[sid][target]
+
+
+def test_run_hop_analysis_stop_inner_loop(mocker):
+    target = "8.8.8.8"
+    sid = "test_sid"
+    active_tasks[sid] = {target: {}}
+
+    mocker.patch("database.get_or_create_target", return_value=1)
+
+    # Mock tracepath to find one hop
+    mock_tracepath = mocker.Mock()
+    mock_tracepath.stdout.readline.side_effect = [" 1: 192.168.1.1", ""]
+    mocker.patch("subprocess.Popen", return_value=mock_tracepath)
+
+    # Mock ping result
+    mock_ping_result = mocker.Mock()
+    mock_ping_result.stdout = "64 bytes from 192.168.1.1: time=1.23 ms"
+
+    # We need multiple hops to trigger the break inside the for loop
+    mock_tracepath.stdout.readline.side_effect = [
+        " 1: 192.168.1.1",
+        " 2: 192.168.1.2",
+        "",
+    ]
+
+    # We want to hit line 158:
+    # 155: while sid in active_tasks and target in active_tasks[sid]:
+    # 156:     for hop in hops:
+    # 157:         if sid not in active_tasks or target not in active_tasks[sid]:
+    # 158:             break
+
+    call_count = [0]
+
+    def side_effect(*args, **kwargs):
+        call_count[0] += 1
+        # On first hop, we let it pass.
+        # On second hop, we want it to fail the check at 157.
+        # However, subprocess.run is called AFTER the check at 157.
+        # So on the FIRST call to subprocess.run (for hop 1), we delete the SID.
+        # Then when the loop continues to hop 2, the check at 157 will trigger.
+        if call_count[0] == 1:
+            if sid in active_tasks:
+                del active_tasks[sid]
+        return mock_ping_result
+
+    mocker.patch("subprocess.run", side_effect=side_effect)
+
+    mocker.patch("database.save_hop")
+    mocker.patch("app.socketio.emit")
+
+    run_hop_analysis(target, sid)
+    # The break at 158 is hit, then the outer loop condition is checked and it finishes

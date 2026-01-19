@@ -5,7 +5,9 @@ eventlet.monkey_patch()
 import subprocess
 import re
 import threading
-from flask import Flask, render_template, request, jsonify
+import csv
+import io
+from flask import Flask, render_template, request, jsonify, make_response
 from flask_socketio import SocketIO, emit
 import database
 
@@ -219,6 +221,25 @@ def get_active_targets():
 def clear_history(target):
     database.clear_target_history(target)
     return jsonify({"status": "success"})
+
+
+@app.route("/api/export-csv/<path:target>")
+def export_csv(target):
+    data = database.get_raw_data(target)
+    if not data:
+        return "No data found", 404
+
+    si = io.StringIO()
+    cw = csv.DictWriter(si, fieldnames=["timestamp", "latency", "loss"])
+    cw.writeheader()
+    cw.writerows(data)
+
+    output = make_response(si.getvalue())
+    output.headers["Content-Disposition"] = (
+        f"attachment; filename={target}_network_data.csv"
+    )
+    output.headers["Content-type"] = "text/csv"
+    return output
 
 
 @socketio.on("start_test")

@@ -155,5 +155,30 @@ def clear_target_history(address):
         conn.close()
 
 
+def get_raw_data(address):
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id FROM targets WHERE address = ?", (address,))
+        row = cursor.fetchone()
+        if not row:
+            return []
+        target_id = row[0]
+
+        cursor.execute(
+            """
+            SELECT timestamp, latency, loss 
+            FROM pings 
+            WHERE target_id = ?
+            ORDER BY timestamp ASC
+        """,
+            (target_id,),
+        )
+
+        return [dict(r) for r in cursor.fetchall()]
+    finally:
+        conn.close()
+
+
 if __name__ == "__main__":
     init_db()

@@ -37,3 +37,25 @@ def test_clear_history_api(client):
     rv = client.post(f"/api/clear-history/{address}")
     assert rv.status_code == 200
     assert rv.get_json() == {"status": "success"}
+
+
+def test_export_csv_api(client, monkeypatch, tmp_path):
+    # Setup test database
+    db_file = tmp_path / "test_export.db"
+    monkeypatch.setattr(database, "DB_PATH", str(db_file))
+    database.init_db()
+
+    address = "8.8.8.8"
+    target_id = database.get_or_create_target(address)
+    database.save_ping(target_id, 14.5, 0.0)
+
+    rv = client.get(f"/api/export-csv/{address}")
+    assert rv.status_code == 200
+    assert rv.content_type == "text/csv"
+    assert b"timestamp,latency,loss" in rv.data
+    assert b"14.5,0.0" in rv.data
+
+
+def test_export_csv_not_found(client):
+    rv = client.get("/api/export-csv/nonexistent.com")
+    assert rv.status_code == 404

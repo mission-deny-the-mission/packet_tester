@@ -23,12 +23,36 @@ const verticalLinePlugin = {
 };
 Chart.register(verticalLinePlugin);
 
+// Helper for capturing snapshots
+async function captureElement(element, filename) {
+    try {
+        const canvas = await html2canvas(element, {
+            backgroundColor: '#0f172a',
+            scale: 2,
+            logging: false,
+            useCORS: true
+        });
+        const link = document.createElement('a');
+        link.download = filename;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+    } catch (err) {
+        console.error('Snapshot failed:', err);
+        alert('Failed to capture snapshot.');
+    }
+}
+
 const monitors = {};
 
 const addBtn = document.getElementById('add-btn');
 const targetInput = document.getElementById('target');
 const container = document.getElementById('monitors-container');
 const template = document.getElementById('monitor-template');
+const dashboardSnapshotBtn = document.getElementById('dashboard-snapshot-btn');
+
+dashboardSnapshotBtn.addEventListener('click', () => {
+    captureElement(document.body, `network-dashboard-${new Date().toISOString()}.png`);
+});
 
 // Initialize: Load active targets from server
 async function init() {
@@ -151,6 +175,14 @@ async function createMonitor(target) {
             socket.emit('stop_test', { target: target });
             attachedCard.remove();
             delete monitors[target];
+        });
+
+        attachedCard.querySelector('.snapshot-btn').addEventListener('click', () => {
+            captureElement(attachedCard, `monitor-${target}-${new Date().toISOString()}.png`);
+        });
+
+        attachedCard.querySelector('.csv-btn').addEventListener('click', () => {
+            window.location.href = `/api/export-csv/${encodeURIComponent(target)}`;
         });
 
         attachedCard.querySelector('.clear-btn').addEventListener('click', async () => {
