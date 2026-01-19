@@ -4,3 +4,5 @@ venv/
 .ruff_cache/
 .coverage
 network_data.db
+*.deb
+*.pkg.tar.zst

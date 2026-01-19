@@ -65,10 +65,15 @@ jobs:
             echo "VERSION=0.0.1-snapshot-${GITHUB_SHA::7}" >> $GITHUB_ENV
           fi
 
+      - name: Install nFPM
+        run: |
+          curl -sfL https://github.com/goreleaser/nfpm/releases/download/v2.44.1/nfpm_2.44.1_Linux_x86_64.tar.gz | tar -xz nfpm
+          sudo mv nfpm /usr/local/bin/
+
       - name: Build Packages
-        uses: goreleaser/nfpm-action@v3
-        with:
-          args: package --config packaging/nfpm.yaml --target .
+        run: |
+          nfpm package --config packaging/nfpm.yaml --target . --packager deb
+          nfpm package --config packaging/nfpm.yaml --target . --packager archlinux
         env:
           VERSION: ${{ env.VERSION }}
 
