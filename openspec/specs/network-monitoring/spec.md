@@ -2,9 +2,7 @@
 
 ## Purpose
 To provide real-time visibility into network connectivity and performance for multiple targets simultaneously.
-
 ## Requirements
-
 ### Requirement: Concurrent Target Monitoring
 The system SHALL allow users to monitor multiple IP addresses or domains simultaneously from a single dashboard.
 
@@ -34,3 +32,11 @@ The system SHALL persist network metrics in a local database to allow for analys
 - **WHEN** the server is restarted
 - **AND** the user reloads the dashboard
 - **THEN** all previous targets and their historical charts SHALL be restored
+
+### Requirement: Diagnostic Snapshot Export
+The system SHALL allow users to export the current state of a monitor card as an image for sharing and documentation.
+
+#### Scenario: Capturing evidence of loss
+- **WHEN** the user clicks the "Snapshot" button on a target card
+- **THEN** an image file (PNG) containing the charts and path analysis table SHALL be downloaded
+
