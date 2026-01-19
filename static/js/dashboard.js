@@ -103,6 +103,8 @@ async function createMonitor(target) {
         
         const elements = {
             latency: card.querySelector('.curr-latency'),
+            jitter: card.querySelector('.curr-jitter'),
+            mos: card.querySelector('.curr-mos'),
             loss: card.querySelector('.curr-loss'),
             sent: card.querySelector('.pkts-sent'),
             recv: card.querySelector('.pkts-recv'),
@@ -211,7 +213,15 @@ socket.on('ping_result', (data) => {
     m.sent.innerText = data.total_sent;
     m.recv.innerText = data.total_received;
     m.loss.innerText = data.loss;
+    m.jitter.innerText = data.jitter;
+    m.mos.innerText = data.mos;
     
+    // Color MOS based on quality
+    m.mos.classList.remove('text-emerald-400', 'text-yellow-400', 'text-red-400');
+    if (data.mos >= 4) m.mos.classList.add('text-emerald-400');
+    else if (data.mos >= 2.5) m.mos.classList.add('text-yellow-400');
+    else m.mos.classList.add('text-red-400');
+
     const now = new Date().toLocaleTimeString();
     m.timelineLabels.push(now);
     
@@ -256,6 +266,10 @@ socket.on('hop_update', (data) => {
         hopRow.innerHTML = `
             <td class="px-2 py-1 text-slate-500">${data.num}</td>
             <td class="px-2 py-1 font-mono">${data.ip}</td>
+            <td class="px-2 py-1">
+                <div class="text-xs font-semibold text-slate-300">${data.isp || '-'}</div>
+                <div class="text-[10px] text-slate-500">${data.location || '-'}</div>
+            </td>
             <td class="px-2 py-1 loss-val">0%</td>
             <td class="px-2 py-1 lat-val">0ms</td>
             <td class="px-2 py-1">
@@ -268,7 +282,7 @@ socket.on('hop_update', (data) => {
 
         const canvas = hopRow.querySelector('.hopSparkline');
         const sparklineData = {
-            labels: m.timelineLabels, // Use shared labels
+            labels: m.timelineLabels,
             datasets: [{
                 data: new Array(m.timelineLabels.length).fill(null),
                 borderColor: '#10b981',
@@ -299,7 +313,7 @@ socket.on('hop_update', (data) => {
                     x: { display: false },
                     y: { display: false, beginAtZero: true }
                 },
-                plugins: { legend: { display: false } },
+                plugins: { legend: { display: false }, tooltip: { enabled: false } },
                 animation: { duration: 0 }
             }
         });
@@ -319,87 +333,6 @@ socket.on('hop_update', (data) => {
 
     lossEl.innerText = `${data.loss}%`;
     latEl.innerText = `${data.avg_latency}ms`;
-
-    if (data.loss > 0) {
-        lossEl.classList.add('text-red-400', 'font-bold');
-        hopObj.row.classList.add('bg-red-500/10');
-    } else {
-        lossEl.classList.remove('text-red-400', 'font-bold');
-        hopObj.row.classList.remove('bg-red-500/10');
-    }
-});
-
-socket.on('hop_update', (data) => {
-    const m = monitors[data.target];
-    if (!m) return;
-
-    if (!hopRow) {
-        hopRow = document.createElement('tr');
-        hopRow.innerHTML = `
-            <td class="px-2 py-1 text-slate-500">${data.num}</td>
-            <td class="px-2 py-1 font-mono">${data.ip}</td>
-            <td class="px-2 py-1 loss-val">0%</td>
-            <td class="px-2 py-1 lat-val">0ms</td>
-            <td class="px-2 py-1">
-                <div class="h-8 w-full">
-                    <canvas class="hopSparkline"></canvas>
-                </div>
-            </td>
-        `;
-        m.hopList.appendChild(hopRow);
-
-        const canvas = hopRow.querySelector('.hopSparkline');
-        const sparklineData = {
-            labels: [],
-            datasets: [{
-                data: [],
-                borderColor: '#10b981',
-                borderWidth: 1,
-                fill: false,
-                tension: 0.4,
-                pointRadius: 0
-            }]
-        };
-
-        const sparklineChart = new Chart(canvas.getContext('2d'), {
-            type: 'line',
-            data: sparklineData,
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    x: { display: false },
-                    y: { display: false, beginAtZero: true }
-                },
-                plugins: { legend: { display: false }, tooltip: { enabled: false } },
-                animation: { duration: 0 }
-            }
-        });
-
-        m.hops[data.ip] = {
-            row: hopRow,
-            chart: sparklineChart,
-            data: sparklineData
-        };
-    }
-
-    const hopObj = m.hops[data.ip];
-    const lossEl = hopObj.row.querySelector('.loss-val');
-    const latEl = hopObj.row.querySelector('.lat-val');
-
-    lossEl.innerText = `${data.loss}%`;
-    latEl.innerText = `${data.avg_latency}ms`;
-
-    // Update Sparkline
-    const now = new Date().toLocaleTimeString();
-    hopObj.data.labels.push(now);
-    hopObj.data.datasets[0].data.push(data.avg_latency);
-
-    if (hopObj.data.labels.length > 60) {
-        hopObj.data.labels.shift();
-        hopObj.data.datasets[0].data.shift();
-    }
-    hopObj.chart.update();
 
     if (data.loss > 0) {
         lossEl.classList.add('text-red-400', 'font-bold');

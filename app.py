@@ -7,9 +7,85 @@ import re
 import threading
 import csv
 import io
+import requests
 from flask import Flask, render_template, request, jsonify, make_response
 from flask_socketio import SocketIO, emit
 import database
+
+ip_info_cache = {}
+
+
+def get_ip_info(ip):
+    if not ip or ip == "*":
+        return {"isp": "-", "location": "-"}
+    if ip in ip_info_cache:
+        return ip_info_cache[ip]
+
+    # Quick check for private IPs
+    if (
+        ip.startswith("10.")
+        or ip.startswith("192.168.")
+        or (ip.startswith("172.") and 16 <= int(ip.split(".")[1]) <= 31)
+    ):
+        info = {"isp": "Local Network", "location": "Private IP"}
+    else:
+        try:
+            # ip-api.com rate limit: 45 req/min
+            resp = requests.get(f"http://ip-api.com/json/{ip}", timeout=2)
+            data = resp.json()
+            if data.get("status") == "success":
+                info = {
+                    "isp": data.get("isp", "Unknown ISP"),
+                    "location": f"{data.get('city', '')}, {data.get('countryCode', '')}".strip(
+                        ", "
+                    ),
+                }
+            else:
+                info = {"isp": "Unknown ISP", "location": "Unknown"}
+        except Exception as e:
+            print(f"Error looking up IP {ip}: {e}")
+            info = {"isp": "Unknown ISP", "location": "Unknown"}
+
+    ip_info_cache[ip] = info
+    return info
+
+
+def calculate_mos(latency, loss, jitter):
+    """
+    Simplified MOS calculation
+    R = 94.2 - Id - Ie
+    Id (Delay Impairment) = latency * 0.02 + (latency > 150 ? (latency-150)*0.1 : 0)
+    Ie (Loss Impairment) = loss * 2.5
+    """
+    if latency is None:
+        return 1.0
+
+    # Effective Latency
+    eff_latency = latency + (jitter * 2) + 10
+
+    # Delay Impairment
+    if eff_latency < 160:
+        id_imp = eff_latency / 40
+    else:
+        id_imp = (eff_latency - 120) / 10
+
+    # Loss Impairment
+    ie_imp = loss * 2.5
+
+    r_factor = 94.2 - id_imp - ie_imp
+
+    # Clamp R-factor
+    r_factor = max(0, min(94.2, r_factor))
+
+    # Convert R-factor to MOS
+    mos = (
+        1
+        + (0.035 * r_factor)
+        + (r_factor * (r_factor - 60) * (100 - r_factor) * 0.000007)
+    )
+
+    return round(max(1.0, min(5.0, mos)), 2)
+
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
@@ -51,6 +127,8 @@ def run_ping(target, sid):
 
     total_sent = 0
     total_received = 0
+    prev_latency = None
+    jitter = 0
 
     for line in iter(process.stdout.readline, ""):
         if sid not in active_tasks or target not in active_tasks[sid]:
@@ -62,12 +140,24 @@ def run_ping(target, sid):
             total_sent += 1
             total_received += 1
             latency = parse_ping(line)
+
+            if prev_latency is not None:
+                # Jitter calculation (RFC 3550 style simple version)
+                jitter = jitter + (abs(latency - prev_latency) - jitter) / 16
+
+            prev_latency = latency
+
             loss = (
                 0
                 if total_sent == 0
                 else ((total_sent - total_received) / total_sent) * 100
             )
-            print(f"Ping result for {target}: {latency}ms")
+
+            mos = calculate_mos(latency, loss, jitter)
+
+            print(
+                f"Ping result for {target}: {latency}ms, Jitter: {round(jitter, 2)}ms, MOS: {mos}"
+            )
 
             # Save to database
             database.save_ping(target_id, latency, round(loss, 2))
@@ -78,6 +168,8 @@ def run_ping(target, sid):
                     "target": target,
                     "latency": latency,
                     "loss": round(loss, 2),
+                    "jitter": round(jitter, 2),
+                    "mos": mos,
                     "total_sent": total_sent,
                     "total_received": total_received,
                     "raw": line.strip(),
@@ -91,7 +183,8 @@ def run_ping(target, sid):
         ):
             total_sent += 1
             loss = ((total_sent - total_received) / total_sent) * 100
-            print(f"Ping timeout for {target}")
+            mos = calculate_mos(None, loss, jitter)
+            print(f"Ping timeout for {target}, MOS: {mos}")
 
             # Save to database (None for latency on timeout)
             database.save_ping(target_id, None, round(loss, 2))
@@ -102,6 +195,8 @@ def run_ping(target, sid):
                     "target": target,
                     "latency": None,
                     "loss": round(loss, 2),
+                    "jitter": round(jitter, 2),
+                    "mos": mos,
                     "total_sent": total_sent,
                     "total_received": total_received,
                     "raw": "Request timeout",
@@ -138,13 +233,16 @@ def run_hop_analysis(target, sid):
             hop_num = match.group(1)
             hop_ip = match.group(2)
             if hop_ip not in [h["ip"] for h in hops]:
-                hops.append({"num": hop_num, "ip": hop_ip})
+                ip_info = get_ip_info(hop_ip)
+                hops.append({"num": hop_num, "ip": hop_ip, **ip_info})
                 socketio.emit(
                     "hop_update",
                     {
                         "target": target,
                         "num": hop_num,
                         "ip": hop_ip,
+                        "isp": ip_info["isp"],
+                        "location": ip_info["location"],
                         "loss": 0,
                         "avg_latency": 0,
                     },
@@ -190,6 +288,8 @@ def run_hop_analysis(target, sid):
                     "target": target,
                     "num": hop["num"],
                     "ip": hop["ip"],
+                    "isp": hop.get("isp", "-"),
+                    "location": hop.get("location", "-"),
                     "loss": round(loss, 2),
                     "avg_latency": round(avg_lat, 2),
                 },
