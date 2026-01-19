@@ -2,9 +2,7 @@
 
 ## Purpose
 To discover and analyze the network path to a destination, identifying specific routers and monitoring their individual performance to isolate bottlenecks.
-
 ## Requirements
-
 ### Requirement: Path Discovery
 The system SHALL identify all intermediate hops (routers) between the local host and the destination target using ICMP TTL expiration.
 
@@ -20,8 +18,10 @@ The system SHALL probe each identified hop at regular intervals to determine its
 - **THEN** its current average latency and packet loss percentage SHALL be updated in the path analysis table
 
 ### Requirement: Visual Path Diagnostics
-The system SHALL highlight hops experiencing packet loss to assist in identifying network bottlenecks.
+The system SHALL display a table of all hops with real-time stats and visual timelines to assist in identifying where network bottlenecks begin.
 
-#### Scenario: Highlighting lossy hops
-- **WHEN** a hop has a packet loss greater than 0%
-- **THEN** that hop's row in the table SHALL be highlighted in red
+#### Scenario: Correlating spikes across hops
+- **WHEN** Hop 4 experiences a latency spike
+- **THEN** its sparkline SHALL show the spike
+- **AND** the destination sparkline SHALL show a corresponding spike at the same vertical alignment
+
