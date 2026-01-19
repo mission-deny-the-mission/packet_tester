@@ -43,7 +43,8 @@ function createMonitor(target) {
             loss: card.querySelector('.curr-loss'),
             sent: card.querySelector('.pkts-sent'),
             recv: card.querySelector('.pkts-recv'),
-            log: card.querySelector('.traceroute-log'),
+            hopList: card.querySelector('.hop-list'),
+            hops: {}, // Track hop elements by IP
             canvas: card.querySelector('.latencyChart'),
             data: {
                 labels: [],
@@ -122,16 +123,35 @@ socket.on('ping_result', (data) => {
     m.chart.update();
 });
 
-socket.on('traceroute_result', (data) => {
+socket.on('hop_update', (data) => {
     const m = monitors[data.target];
     if (!m) return;
 
-    if (m.log.innerHTML.includes('Initializing')) {
-        m.log.innerHTML = '';
+    let hopRow = m.hops[data.ip];
+    if (!hopRow) {
+        hopRow = document.createElement('tr');
+        hopRow.innerHTML = `
+            <td class="px-2 py-1 text-slate-500">${data.num}</td>
+            <td class="px-2 py-1 font-mono">${data.ip}</td>
+            <td class="px-2 py-1 loss-val">0%</td>
+            <td class="px-2 py-1 lat-val">0ms</td>
+        `;
+        m.hopList.appendChild(hopRow);
+        m.hops[data.ip] = hopRow;
     }
 
-    const div = document.createElement('div');
-    div.innerText = data.raw;
-    m.log.appendChild(div);
-    m.log.scrollTop = m.log.scrollHeight;
+    const lossEl = hopRow.querySelector('.loss-val');
+    const latEl = hopRow.querySelector('.lat-val');
+
+    lossEl.innerText = `${data.loss}%`;
+    latEl.innerText = `${data.avg_latency}ms`;
+
+    // Visual alerting
+    if (data.loss > 0) {
+        lossEl.classList.add('text-red-400', 'font-bold');
+        hopRow.classList.add('bg-red-500/10');
+    } else {
+        lossEl.classList.remove('text-red-400', 'font-bold');
+        hopRow.classList.remove('bg-red-500/10');
+    }
 });

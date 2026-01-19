@@ -98,39 +98,85 @@ def run_ping(target, sid):
     print(f"Ping process for {target} finished")
 
 
-def run_traceroute(target, sid):
-    print(f"Starting traceroute for {target}")
+def run_hop_analysis(target, sid):
+    print(f"Starting hop analysis for {target}")
+    # We'll use a loop to ping each hop found by tracepath
+    # First, get the hops
+    hops = []
     process = subprocess.Popen(
-        ["tracepath", "-n", "-m", "30", target],
+        ["tracepath", "-n", "-m", "15", target],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
     )
 
-    if sid not in active_tasks:
-        process.terminate()
-        return
-    if target not in active_tasks[sid]:
-        active_tasks[sid][target] = {}
-    active_tasks[sid][target]["traceroute"] = process
-
     for line in iter(process.stdout.readline, ""):
         if sid not in active_tasks or target not in active_tasks[sid]:
             process.terminate()
             break
 
-        socketio.emit(
-            "traceroute_result", {"target": target, "raw": line.strip()}, room=sid
-        )
+        match = re.search(r"\s+(\d+):\s+([\d\.]+)", line)
+        if match:
+            hop_num = match.group(1)
+            hop_ip = match.group(2)
+            if hop_ip not in [h["ip"] for h in hops]:
+                hops.append({"num": hop_num, "ip": hop_ip})
+                socketio.emit(
+                    "hop_update",
+                    {
+                        "target": target,
+                        "num": hop_num,
+                        "ip": hop_ip,
+                        "loss": 0,
+                        "avg_latency": 0,
+                    },
+                    room=sid,
+                )
 
-    process.wait()
-    print(f"Traceroute for {target} finished")
+    # Now continuously monitor identified hops for loss
+    while sid in active_tasks and target in active_tasks[sid]:
+        for hop in hops:
+            if sid not in active_tasks or target not in active_tasks[sid]:
+                break
 
+            # Ping this hop specifically
+            # Note: Pinging internal hops might not always work as they may deprioritize ICMP
+            # but it's the standard way to detect where loss starts.
+            ping_proc = subprocess.run(
+                ["ping", "-c", "3", "-W", "1", hop["ip"]],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
 
-@app.route("/")
-def index():
-    return render_template("index.html")
+            sent = 3
+            received = 0
+            latencies = []
+
+            for line in ping_proc.stdout.split("\n"):
+                if "bytes from" in line:
+                    received += 1
+                    l_match = re.search(r"time=([\d\.]+)", line)
+                    if l_match:
+                        latencies.append(float(l_match.group(1)))
+
+            loss = ((sent - received) / sent) * 100
+            avg_lat = sum(latencies) / len(latencies) if latencies else 0
+
+            socketio.emit(
+                "hop_update",
+                {
+                    "target": target,
+                    "num": hop["num"],
+                    "ip": hop["ip"],
+                    "loss": round(loss, 2),
+                    "avg_latency": round(avg_lat, 2),
+                },
+                room=sid,
+            )
+
+        eventlet.sleep(2)  # Interval between hop scans
 
 
 @socketio.on("start_test")
@@ -148,7 +194,7 @@ def handle_start_test(data):
     active_tasks[sid][target] = {}
 
     eventlet.spawn(run_ping, target, sid)
-    eventlet.spawn(run_traceroute, target, sid)
+    eventlet.spawn(run_hop_analysis, target, sid)
 
 
 @socketio.on("stop_test")
