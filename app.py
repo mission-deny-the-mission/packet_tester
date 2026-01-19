@@ -12,6 +12,7 @@ app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
 # Shared state to manage active processes
+# Structure: active_tasks[sid][target] = {'ping': proc, 'traceroute': proc}
 active_tasks = {}
 
 
@@ -24,7 +25,7 @@ def parse_ping(line):
 
 
 def run_ping(target, sid):
-    # Linux ping: -i interval (seconds)
+    print(f"Starting ping for {target} (sid: {sid})")
     process = subprocess.Popen(
         ["ping", "-i", "1", target],
         stdout=subprocess.PIPE,
@@ -32,15 +33,21 @@ def run_ping(target, sid):
         text=True,
         bufsize=1,
     )
+
     if sid not in active_tasks:
-        active_tasks[sid] = {}
-    active_tasks[sid]["ping"] = process
+        print(f"SID {sid} not in active_tasks, aborting ping")
+        process.terminate()
+        return
+    if target not in active_tasks[sid]:
+        active_tasks[sid][target] = {}
+    active_tasks[sid][target]["ping"] = process
 
     total_sent = 0
     total_received = 0
 
     for line in iter(process.stdout.readline, ""):
-        if sid not in active_tasks:
+        if sid not in active_tasks or target not in active_tasks[sid]:
+            print(f"Task for {target} stopped, terminating process")
             process.terminate()
             break
 
@@ -53,9 +60,11 @@ def run_ping(target, sid):
                 if total_sent == 0
                 else ((total_sent - total_received) / total_sent) * 100
             )
+            print(f"Ping result for {target}: {latency}ms")
             socketio.emit(
                 "ping_result",
                 {
+                    "target": target,
                     "latency": latency,
                     "loss": round(loss, 2),
                     "total_sent": total_sent,
@@ -71,9 +80,11 @@ def run_ping(target, sid):
         ):
             total_sent += 1
             loss = ((total_sent - total_received) / total_sent) * 100
+            print(f"Ping timeout for {target}")
             socketio.emit(
                 "ping_result",
                 {
+                    "target": target,
                     "latency": None,
                     "loss": round(loss, 2),
                     "total_sent": total_sent,
@@ -82,15 +93,13 @@ def run_ping(target, sid):
                 },
                 room=sid,
             )
-        elif "packets transmitted" in line:
-            # Stats line at the end, but we are running continuously
-            pass
 
     process.wait()
+    print(f"Ping process for {target} finished")
 
 
 def run_traceroute(target, sid):
-    # Using tracepath command as traceroute is not available
+    print(f"Starting traceroute for {target}")
     process = subprocess.Popen(
         ["tracepath", "-n", "-m", "30", target],
         stdout=subprocess.PIPE,
@@ -98,18 +107,25 @@ def run_traceroute(target, sid):
         text=True,
         bufsize=1,
     )
+
     if sid not in active_tasks:
-        active_tasks[sid] = {}
-    active_tasks[sid]["traceroute"] = process
+        process.terminate()
+        return
+    if target not in active_tasks[sid]:
+        active_tasks[sid][target] = {}
+    active_tasks[sid][target]["traceroute"] = process
 
     for line in iter(process.stdout.readline, ""):
-        if sid not in active_tasks:
+        if sid not in active_tasks or target not in active_tasks[sid]:
             process.terminate()
             break
 
-        socketio.emit("traceroute_result", {"raw": line.strip()}, room=sid)
+        socketio.emit(
+            "traceroute_result", {"target": target, "raw": line.strip()}, room=sid
+        )
 
     process.wait()
+    print(f"Traceroute for {target} finished")
 
 
 @app.route("/")
@@ -124,29 +140,41 @@ def handle_start_test(data):
         return
 
     sid = request.sid
-    # Stop existing tests for this session if any
-    stop_sid_tasks(sid)
-    active_tasks[sid] = {}
+    if sid not in active_tasks:
+        active_tasks[sid] = {}
+
+    # If already running for this target, stop it first to restart
+    stop_target_tasks(sid, target)
+    active_tasks[sid][target] = {}
 
     eventlet.spawn(run_ping, target, sid)
     eventlet.spawn(run_traceroute, target, sid)
 
 
+@socketio.on("stop_test")
+def handle_stop_test(data):
+    target = data.get("target")
+    if target:
+        stop_target_tasks(request.sid, target)
+
+
 @socketio.on("disconnect")
 def handle_disconnect():
-    stop_sid_tasks(request.sid)
-
-
-def stop_sid_tasks(sid):
+    sid = request.sid
     if sid in active_tasks:
-        tasks = active_tasks[sid]
-        for task_name in list(tasks.keys()):
-            process = tasks.pop(task_name)
+        for target in list(active_tasks[sid].keys()):
+            stop_target_tasks(sid, target)
+        del active_tasks[sid]
+
+
+def stop_target_tasks(sid, target):
+    if sid in active_tasks and target in active_tasks[sid]:
+        tasks = active_tasks[sid].pop(target)
+        for task_name, process in tasks.items():
             try:
                 process.terminate()
             except:
                 pass
-        del active_tasks[sid]
 
 
 if __name__ == "__main__":

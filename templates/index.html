@@ -18,40 +18,56 @@
         <header class="flex justify-between items-center mb-8">
             <h1 class="text-3xl font-bold text-blue-400">Network Monitor</h1>
             <div class="flex gap-2">
-                <input type="text" id="target" placeholder="8.8.8.8" class="bg-slate-800 border border-slate-700 rounded px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <button id="start-btn" class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded font-semibold transition">Start Test</button>
+                <input type="text" id="target" placeholder="Enter IP or Domain (e.g. 8.8.8.8)" class="w-64 bg-slate-800 border border-slate-700 rounded px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <button id="add-btn" class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded font-semibold transition">Add Target</button>
             </div>
         </header>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div class="card flex flex-col items-center justify-center">
-                <span class="text-slate-400 text-sm mb-1 uppercase tracking-wider">Latency</span>
-                <div class="text-4xl font-bold"><span id="curr-latency">--</span> <span class="text-lg text-slate-500">ms</span></div>
-            </div>
-            <div class="card flex flex-col items-center justify-center border-l-4 border-red-500">
-                <span class="text-slate-400 text-sm mb-1 uppercase tracking-wider">Packet Loss</span>
-                <div class="text-4xl font-bold"><span id="curr-loss">0</span> <span class="text-lg text-slate-500">%</span></div>
-            </div>
-            <div class="card flex flex-col items-center justify-center">
-                <span class="text-slate-400 text-sm mb-1 uppercase tracking-wider">Packets</span>
-                <div class="text-2xl font-semibold"><span id="pkts-sent">0</span> / <span id="pkts-recv">0</span></div>
-            </div>
+        <div id="monitors-container" class="space-y-8">
+            <!-- Dynamic monitors will be added here -->
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div class="card">
-                <h2 class="text-xl font-semibold mb-4 text-blue-300">Latency Trend (Real-time)</h2>
-                <div class="h-64">
-                    <canvas id="latencyChart"></canvas>
+        <template id="monitor-template">
+            <div class="monitor-card border border-slate-700 rounded-xl overflow-hidden bg-slate-800/50">
+                <div class="bg-slate-800 px-6 py-3 flex justify-between items-center border-b border-slate-700">
+                    <h2 class="text-xl font-bold text-blue-300 target-display">--</h2>
+                    <button class="stop-btn text-red-400 hover:text-red-300 font-medium">Remove</button>
+                </div>
+                
+                <div class="p-6">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                        <div class="bg-slate-900/50 p-4 rounded-lg text-center">
+                            <span class="text-slate-500 text-xs uppercase">Latency</span>
+                            <div class="text-2xl font-bold"><span class="curr-latency">--</span> <span class="text-sm text-slate-500">ms</span></div>
+                        </div>
+                        <div class="bg-slate-900/50 p-4 rounded-lg text-center border-l-2 border-red-500/50">
+                            <span class="text-slate-500 text-xs uppercase">Packet Loss</span>
+                            <div class="text-2xl font-bold text-red-400"><span class="curr-loss">0</span>%</div>
+                        </div>
+                        <div class="bg-slate-900/50 p-4 rounded-lg text-center">
+                            <span class="text-slate-500 text-xs uppercase">Packets</span>
+                            <div class="text-xl font-semibold"><span class="pkts-sent">0</span> / <span class="pkts-recv">0</span></div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div>
+                            <h3 class="text-sm font-semibold mb-2 text-slate-400">Latency History</h3>
+                            <div class="h-48">
+                                <canvas class="latencyChart"></canvas>
+                            </div>
+                        </div>
+                        <div>
+                            <h3 class="text-sm font-semibold mb-2 text-slate-400">Traceroute</h3>
+                            <div class="traceroute-log bg-slate-900 rounded p-3 h-48 overflow-y-auto text-xs text-green-400 font-mono">
+                                Initializing...
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="card">
-                <h2 class="text-xl font-semibold mb-4 text-green-300">Traceroute</h2>
-                <div id="traceroute-log" class="bg-slate-900 rounded p-4 h-64 overflow-y-auto text-sm text-green-400">
-                    Waiting for data...
-                </div>
-            </div>
-        </div>
+        </template>
+
     </div>
 
     <script src="/static/js/dashboard.js"></script>

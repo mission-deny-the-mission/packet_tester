@@ -1,112 +1,137 @@
 const socket = io();
 
-const latencyCtx = document.getElementById('latencyChart').getContext('2d');
-const maxDataPoints = 60;
-const latencyData = {
-    labels: [],
-    datasets: [{
-        label: 'Latency (ms)',
-        data: [],
-        borderColor: '#60a5fa',
-        backgroundColor: 'rgba(96, 165, 250, 0.1)',
-        borderWidth: 2,
-        fill: true,
-        tension: 0.4,
-        pointRadius: 0
-    }]
-};
+const monitors = {};
 
-const latencyChart = new Chart(latencyCtx, {
-    type: 'line',
-    data: latencyData,
-    options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-            x: {
-                display: false
-            },
-            y: {
-                beginAtZero: true,
-                grid: {
-                    color: 'rgba(255, 255, 255, 0.1)'
-                },
-                ticks: {
-                    color: '#94a3b8'
-                }
-            }
-        },
-        plugins: {
-            legend: {
-                display: false
-            }
-        },
-        animation: {
-            duration: 0
-        }
+const addBtn = document.getElementById('add-btn');
+const targetInput = document.getElementById('target');
+const container = document.getElementById('monitors-container');
+const template = document.getElementById('monitor-template');
+
+addBtn.addEventListener('click', () => {
+    const target = targetInput.value.trim();
+    if (!target) return;
+    
+    console.log('Adding target:', target);
+    
+    if (monitors[target]) {
+        alert('This target is already being monitored.');
+        return;
+    }
+
+    createMonitor(target);
+    targetInput.value = '';
+    
+    if (socket.connected) {
+        socket.emit('start_test', { target: target });
+    } else {
+        console.warn('Socket not connected, queuing test...');
+        socket.on('connect', () => {
+            socket.emit('start_test', { target: target });
+        });
     }
 });
 
-const startBtn = document.getElementById('start-btn');
-const targetInput = document.getElementById('target');
-const currLatency = document.getElementById('curr-latency');
-const currLoss = document.getElementById('curr-loss');
-const pktsSent = document.getElementById('pkts-sent');
-const pktsRecv = document.getElementById('pkts-recv');
-const tracerouteLog = document.getElementById('traceroute-log');
+function createMonitor(target) {
+    try {
+        const clone = template.content.cloneNode(true);
+        const card = clone.querySelector('.monitor-card');
+        
+        card.querySelector('.target-display').innerText = target;
+        
+        const elements = {
+            latency: card.querySelector('.curr-latency'),
+            loss: card.querySelector('.curr-loss'),
+            sent: card.querySelector('.pkts-sent'),
+            recv: card.querySelector('.pkts-recv'),
+            log: card.querySelector('.traceroute-log'),
+            canvas: card.querySelector('.latencyChart'),
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Latency (ms)',
+                    data: [],
+                    borderColor: '#60a5fa',
+                    backgroundColor: 'rgba(96, 165, 250, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 0
+                }]
+            }
+        };
 
-startBtn.addEventListener('click', () => {
-    const target = targetInput.value.trim() || '8.8.8.8';
-    
-    // Reset UI
-    latencyData.labels = [];
-    latencyData.datasets[0].data = [];
-    latencyChart.update();
-    tracerouteLog.innerHTML = 'Starting traceroute...<br>';
-    currLatency.innerText = '--';
-    currLoss.innerText = '0';
-    pktsSent.innerText = '0';
-    pktsRecv.innerText = '0';
+        // Add to DOM first
+        container.prepend(clone);
+        // After prepend, clone is empty, we need to get the element from the DOM
+        const attachedCard = container.firstElementChild;
+        
+        elements.chart = new Chart(elements.canvas.getContext('2d'), {
+            type: 'line',
+            data: elements.data,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { display: false },
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                        ticks: { color: '#94a3b8' }
+                    }
+                },
+                plugins: { legend: { display: false } },
+                animation: { duration: 0 }
+            }
+        });
 
-    socket.emit('start_test', { target: target });
-});
+        attachedCard.querySelector('.stop-btn').addEventListener('click', () => {
+            socket.emit('stop_test', { target: target });
+            attachedCard.remove();
+            delete monitors[target];
+        });
+
+        monitors[target] = elements;
+    } catch (err) {
+        console.error('Error creating monitor:', err);
+    }
+}
 
 socket.on('ping_result', (data) => {
-    // Update stats
-    pktsSent.innerText = data.total_sent;
-    pktsRecv.innerText = data.total_received;
-    currLoss.innerText = data.loss;
+    const m = monitors[data.target];
+    if (!m) return;
+
+    m.sent.innerText = data.total_sent;
+    m.recv.innerText = data.total_received;
+    m.loss.innerText = data.loss;
+    
+    const now = new Date().toLocaleTimeString();
+    m.data.labels.push(now);
     
     if (data.latency !== null) {
-        currLatency.innerText = data.latency;
-        
-        // Update Chart
-        const now = new Date().toLocaleTimeString();
-        latencyData.labels.push(now);
-        latencyData.datasets[0].data.push(data.latency);
-        
-        if (latencyData.labels.length > maxDataPoints) {
-            latencyData.labels.shift();
-            latencyData.datasets[0].data.shift();
-        }
-        latencyChart.update();
+        m.latency.innerText = data.latency;
+        m.data.datasets[0].data.push(data.latency);
     } else {
-        currLatency.innerText = 'TIMEOUT';
-        // Add a zero or null value to chart to show drop? 
-        // Let's add null to create a gap
-        latencyData.labels.push(new Date().toLocaleTimeString());
-        latencyData.datasets[0].data.push(null);
-        if (latencyData.labels.length > maxDataPoints) {
-            latencyData.labels.shift();
-            latencyData.datasets[0].data.shift();
-        }
-        latencyChart.update();
+        m.latency.innerText = 'TIMEOUT';
+        m.data.datasets[0].data.push(null);
     }
+
+    if (m.data.labels.length > 60) {
+        m.data.labels.shift();
+        m.data.datasets[0].data.shift();
+    }
+    m.chart.update();
 });
 
 socket.on('traceroute_result', (data) => {
+    const m = monitors[data.target];
+    if (!m) return;
+
+    if (m.log.innerHTML.includes('Initializing')) {
+        m.log.innerHTML = '';
+    }
+
     const div = document.createElement('div');
     div.innerText = data.raw;
-    tracerouteLog.appendChild(div);
-    tracerouteLog.scrollTop = tracerouteLog.scrollHeight;
+    m.log.appendChild(div);
+    m.log.scrollTop = m.log.scrollHeight;
 });
