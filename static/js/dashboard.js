@@ -7,6 +7,20 @@ const targetInput = document.getElementById('target');
 const container = document.getElementById('monitors-container');
 const template = document.getElementById('monitor-template');
 
+// Initialize: Load active targets from server
+async function init() {
+    try {
+        const response = await fetch('/api/active-targets');
+        const targets = await response.json();
+        targets.forEach(target => {
+            createMonitor(target);
+            startTest(target);
+        });
+    } catch (err) {
+        console.error('Failed to load active targets:', err);
+    }
+}
+
 addBtn.addEventListener('click', () => {
     const target = targetInput.value.trim();
     if (!target) return;
@@ -20,18 +34,20 @@ addBtn.addEventListener('click', () => {
 
     createMonitor(target);
     targetInput.value = '';
-    
+    startTest(target);
+});
+
+function startTest(target) {
     if (socket.connected) {
         socket.emit('start_test', { target: target });
     } else {
-        console.warn('Socket not connected, queuing test...');
         socket.on('connect', () => {
             socket.emit('start_test', { target: target });
         });
     }
-});
+}
 
-function createMonitor(target) {
+async function createMonitor(target) {
     try {
         const clone = template.content.cloneNode(true);
         const card = clone.querySelector('.monitor-card');
@@ -44,7 +60,7 @@ function createMonitor(target) {
             sent: card.querySelector('.pkts-sent'),
             recv: card.querySelector('.pkts-recv'),
             hopList: card.querySelector('.hop-list'),
-            hops: {}, // Track hop elements by IP
+            hops: {}, 
             canvas: card.querySelector('.latencyChart'),
             data: {
                 labels: [],
@@ -61,9 +77,20 @@ function createMonitor(target) {
             }
         };
 
-        // Add to DOM first
+        // Load history before showing chart
+        try {
+            const histResp = await fetch(`/api/history/${encodeURIComponent(target)}?hours=1`);
+            const history = await histResp.json();
+            history.forEach(point => {
+                const time = new Date(point.timestamp + 'Z').toLocaleTimeString();
+                elements.data.labels.push(time);
+                elements.data.datasets[0].data.push(point.latency);
+            });
+        } catch (err) {
+            console.error(`Failed to load history for ${target}:`, err);
+        }
+
         container.prepend(clone);
-        // After prepend, clone is empty, we need to get the element from the DOM
         const attachedCard = container.firstElementChild;
         
         elements.chart = new Chart(elements.canvas.getContext('2d'), {
@@ -91,6 +118,15 @@ function createMonitor(target) {
             delete monitors[target];
         });
 
+        attachedCard.querySelector('.clear-btn').addEventListener('click', async () => {
+            if (confirm(`Clear all history for ${target}?`)) {
+                await fetch(`/api/clear-history/${encodeURIComponent(target)}`, { method: 'POST' });
+                elements.data.labels = [];
+                elements.data.datasets[0].data = [];
+                elements.chart.update();
+            }
+        });
+
         monitors[target] = elements;
     } catch (err) {
         console.error('Error creating monitor:', err);
@@ -116,7 +152,7 @@ socket.on('ping_result', (data) => {
         m.data.datasets[0].data.push(null);
     }
 
-    if (m.data.labels.length > 60) {
+    if (m.data.labels.length > 200) { // Increased for better history view
         m.data.labels.shift();
         m.data.datasets[0].data.shift();
     }
@@ -146,7 +182,6 @@ socket.on('hop_update', (data) => {
     lossEl.innerText = `${data.loss}%`;
     latEl.innerText = `${data.avg_latency}ms`;
 
-    // Visual alerting
     if (data.loss > 0) {
         lossEl.classList.add('text-red-400', 'font-bold');
         hopRow.classList.add('bg-red-500/10');
@@ -155,3 +190,6 @@ socket.on('hop_update', (data) => {
         hopRow.classList.remove('bg-red-500/10');
     }
 });
+
+// Run init
+init();

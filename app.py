@@ -5,14 +5,17 @@ eventlet.monkey_patch()
 import subprocess
 import re
 import threading
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
+import database
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
+# Initialize database
+database.init_db()
+
 # Shared state to manage active processes
-# Structure: active_tasks[sid][target] = {'ping': proc, 'traceroute': proc}
 active_tasks = {}
 
 
@@ -26,6 +29,8 @@ def parse_ping(line):
 
 def run_ping(target, sid):
     print(f"Starting ping for {target} (sid: {sid})")
+    target_id = database.get_or_create_target(target)
+
     process = subprocess.Popen(
         ["ping", "-i", "1", target],
         stdout=subprocess.PIPE,
@@ -61,6 +66,10 @@ def run_ping(target, sid):
                 else ((total_sent - total_received) / total_sent) * 100
             )
             print(f"Ping result for {target}: {latency}ms")
+
+            # Save to database
+            database.save_ping(target_id, latency, round(loss, 2))
+
             socketio.emit(
                 "ping_result",
                 {
@@ -81,6 +90,10 @@ def run_ping(target, sid):
             total_sent += 1
             loss = ((total_sent - total_received) / total_sent) * 100
             print(f"Ping timeout for {target}")
+
+            # Save to database (None for latency on timeout)
+            database.save_ping(target_id, None, round(loss, 2))
+
             socketio.emit(
                 "ping_result",
                 {
@@ -100,6 +113,8 @@ def run_ping(target, sid):
 
 def run_hop_analysis(target, sid):
     print(f"Starting hop analysis for {target}")
+    target_id = database.get_or_create_target(target)
+
     # We'll use a loop to ping each hop found by tracepath
     # First, get the hops
     hops = []
@@ -141,8 +156,6 @@ def run_hop_analysis(target, sid):
                 break
 
             # Ping this hop specifically
-            # Note: Pinging internal hops might not always work as they may deprioritize ICMP
-            # but it's the standard way to detect where loss starts.
             ping_proc = subprocess.run(
                 ["ping", "-c", "3", "-W", "1", hop["ip"]],
                 stdout=subprocess.PIPE,
@@ -164,6 +177,11 @@ def run_hop_analysis(target, sid):
             loss = ((sent - received) / sent) * 100
             avg_lat = sum(latencies) / len(latencies) if latencies else 0
 
+            # Save hop result to database
+            database.save_hop(
+                target_id, int(hop["num"]), hop["ip"], round(avg_lat, 2), round(loss, 2)
+            )
+
             socketio.emit(
                 "hop_update",
                 {
@@ -184,6 +202,25 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/api/history/<path:target>")
+def get_history(target):
+    hours = request.args.get("hours", 24, type=int)
+    history = database.get_history(target, hours)
+    return jsonify(history)
+
+
+@app.route("/api/active-targets")
+def get_active_targets():
+    targets = database.get_active_targets()
+    return jsonify(targets)
+
+
+@app.route("/api/clear-history/<path:target>", methods=["POST"])
+def clear_history(target):
+    database.clear_target_history(target)
+    return jsonify({"status": "success"})
+
+
 @socketio.on("start_test")
 def handle_start_test(data):
     target = data.get("target")
@@ -193,6 +230,9 @@ def handle_start_test(data):
     sid = request.sid
     if sid not in active_tasks:
         active_tasks[sid] = {}
+
+    # Update database status
+    database.get_or_create_target(target)
 
     # If already running for this target, stop it first to restart
     stop_target_tasks(sid, target)
@@ -206,6 +246,7 @@ def handle_start_test(data):
 def handle_stop_test(data):
     target = data.get("target")
     if target:
+        database.deactivate_target(target)
         stop_target_tasks(request.sid, target)
 
 

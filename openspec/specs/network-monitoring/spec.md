@@ -26,3 +26,11 @@ The system SHALL calculate and display the percentage of packet loss for each ta
 #### Scenario: Detecting loss
 - **WHEN** 10 packets are sent but only 9 are received
 - **THEN** the system SHALL display "10%" packet loss for that target
+
+### Requirement: Historical Data Retention
+The system SHALL persist network metrics in a local database to allow for analysis across sessions and system restarts.
+
+#### Scenario: Data survives restart
+- **WHEN** the server is restarted
+- **AND** the user reloads the dashboard
+- **THEN** all previous targets and their historical charts SHALL be restored
