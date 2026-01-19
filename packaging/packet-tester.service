@@ -1,0 +1,16 @@
+[Unit]
+Description=Packet Tester Real-time Network Diagnostic Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/packet-tester
+ExecStart=/usr/bin/python3 app.py
+Restart=always
+# Required for ping/tracepath if not running as root, 
+# but usually easier to run the service as root for these utilities.
+AmbientCapabilities=CAP_NET_RAW
+
+[Install]
+WantedBy=multi-user.target

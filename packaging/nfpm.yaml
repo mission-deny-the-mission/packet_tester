@@ -1,0 +1,32 @@
+name: "packet-tester"
+arch: "amd64"
+platform: "linux"
+version: "${VERSION}"
+release: 1
+section: "default"
+priority: "extra"
+maintainer: "Opencode Agent <agent@example.com>"
+description: "Real-time network diagnostic dashboard"
+vendor: "Packet Tester"
+homepage: "https://github.com/user/packet_tester"
+license: "MIT"
+contents:
+  - src: "app.py"
+    dst: "/opt/packet-tester/app.py"
+  - src: "database.py"
+    dst: "/opt/packet-tester/database.py"
+  - src: "templates/"
+    dst: "/opt/packet-tester/templates/"
+  - src: "static/"
+    dst: "/opt/packet-tester/static/"
+  - src: "packaging/packet-tester.service"
+    dst: "/usr/lib/systemd/system/packet-tester.service"
+overrides:
+  deb:
+    depends:
+      - python3
+      - python3-flask
+      - python3-flask-socketio
+      - python3-eventlet
+      - iputils-ping
+      - iputils-tracepath

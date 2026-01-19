@@ -1,0 +1,18 @@
+pkgname=packet-tester
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Real-time network diagnostic dashboard"
+arch=('any')
+url="https://github.com/user/packet_tester"
+license=('MIT')
+depends=('python-flask' 'python-flask-socketio' 'python-eventlet' 'iputils')
+source=("packet-tester-$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+package() {
+  cd "$srcdir"
+  install -d "$pkgdir/opt/packet-tester"
+  cp -r app.py database.py templates static "$pkgdir/opt/packet-tester/"
+  
+  install -Dm644 packaging/packet-tester.service "$pkgdir/usr/lib/systemd/system/packet-tester.service"
+}
