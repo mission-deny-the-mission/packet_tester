@@ -179,6 +179,11 @@ def run_hop_analysis(target, sid):
         eventlet.sleep(2)  # Interval between hop scans
 
 
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+
 @socketio.on("start_test")
 def handle_start_test(data):
     target = data.get("target")
