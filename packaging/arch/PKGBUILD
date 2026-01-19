@@ -5,7 +5,7 @@ pkgdesc="Real-time network diagnostic dashboard"
 arch=('any')
 url="https://github.com/user/packet_tester"
 license=('MIT')
-depends=('python-flask' 'python-flask-socketio' 'python-eventlet' 'iputils')
+depends=('python-flask' 'python-flask-socketio' 'python-eventlet' 'python-requests' 'iputils')
 source=("packet-tester-$pkgver.tar.gz")
 sha256sums=('SKIP')
 
