@@ -1,5 +1,8 @@
 # Capability: Hop Analysis
 
+## Purpose
+To discover and analyze the network path to a destination, identifying specific routers and monitoring their individual performance to isolate bottlenecks.
+
 ## Requirements
 
 ### Requirement: Path Discovery

@@ -1,5 +1,8 @@
 # Capability: Network Monitoring
 
+## Purpose
+To provide real-time visibility into network connectivity and performance for multiple targets simultaneously.
+
 ## Requirements
 
 ### Requirement: Concurrent Target Monitoring
